@@ -1,0 +1,23 @@
+{
+  "name": "crypto-ai-trading-bot",
+  "version": "1.0.0",
+  "description": "AI-powered crypto trading bot with Telegram interface",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "axios": "^1.6.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "pg": "^8.11.0",
+    "technicalindicators": "^3.1.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.3.1",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
