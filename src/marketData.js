@@ -5,7 +5,7 @@ const {
   RSI, MACD, BollingerBands, EMA, SMA, ATR, Stochastic
 } = require('technicalindicators');
 
-const BINANCE_BASE = 'https://api.binance.com/api/v3';
+const BINANCE_BASE = 'https://data-api.binance.vision/api/v3';
 
 // Fetch OHLCV candles from Binance
 async function getCandles(pair, interval, limit = 100) {
