@@ -5,9 +5,9 @@ const { query, getSetting } = require('../database/db');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Always use the best available model
-const AI_MODEL = 'claude-fable-5';
-const FALLBACK_MODEL = 'claude-sonnet-4-6';
+// Cost optimization: cheap model for data processing, best model only for final decision
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001';   // ~$0.001 per call
+const SMART_MODEL = 'claude-sonnet-4-6';             // ~$0.01 per call
 
 // Get last N trade outcomes for learning
 async function getLearningMemory(pair, limit = 20) {
@@ -79,27 +79,14 @@ ${indicators4h.lastCandles?.map(c => `${c.time}: O:${c.open} H:${c.high} L:${c.l
 
   try {
     const response = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 1000,
+      model: CHEAP_MODEL,
+      max_tokens: 800,
       messages: [{ role: 'user', content: prompt }]
     });
-
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    // Fallback to Sonnet if Fable 5 fails
-    try {
-      const response = await client.messages.create({
-        model: FALLBACK_MODEL,
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      });
-      const text = response.content[0].text.replace(/```json|```/g, '').trim();
-      return JSON.parse(text);
-    } catch (fallbackErr) {
-      console.error('Stage 1 AI failed:', fallbackErr.message);
-      return { bias: 'NEUTRAL', confidence: 0, summary: 'Analysis failed' };
-    }
+    return { bias: 'NEUTRAL', confidence: 0, summary: 'Analysis failed', key_signals: [], entry_zone: {}, stop_loss: 0, take_profit_1: 0, take_profit_2: 0, strength: 0 };
   }
 }
 
@@ -147,25 +134,14 @@ ${newsText}
 
   try {
     const response = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 800,
+      model: CHEAP_MODEL,
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }]
     });
-
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    try {
-      const response = await client.messages.create({
-        model: FALLBACK_MODEL,
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }]
-      });
-      const text = response.content[0].text.replace(/```json|```/g, '').trim();
-      return JSON.parse(text);
-    } catch (fallbackErr) {
-      return { sentiment: 'NEUTRAL', confidence: 0, summary: 'News analysis failed' };
-    }
+    return { sentiment: 'NEUTRAL', confidence: 50, summary: 'News analysis failed', key_catalysts: [], risks: [], strength: 5, news_impact: 'LOW' };
   }
 }
 
@@ -183,76 +159,65 @@ async function stageFinalVerdict(marketData, technical, news, memory) {
     ? (memory.filter(t => t.pnl_percent > 0).length / memory.length * 100).toFixed(0)
     : 'N/A';
 
-  const prompt = `You are the Chief Risk Officer and Head Trader of a professional crypto fund.
-You have received analysis from two expert analysts. Make the FINAL trading decision.
+  const fearGreedValue = marketData?.fearGreed?.value || 50;
+  const extremeFear = fearGreedValue < 25;
 
-## Current Situation: ${pair} @ $${indicators4h.currentPrice}
+  const prompt = `You are an aggressive but disciplined crypto trader. Make a trading decision.
 
-## Technical Analyst Report
-- Bias: ${technical.bias} (Confidence: ${technical.confidence}%)
-- Strength: ${technical.strength}/10
-- Key Signals: ${technical.key_signals?.join(', ')}
-- Entry Zone: $${technical.entry_zone?.low} - $${technical.entry_zone?.high}
+## ${pair} @ $${indicators4h.currentPrice}
+## Fear & Greed: ${fearGreedValue}/100 ${extremeFear ? '← EXTREME FEAR = best time to buy dips' : ''}
+
+## Technical Analysis
+- Bias: ${technical.bias} | Confidence: ${technical.confidence}% | Strength: ${technical.strength}/10
+- RSI: ${indicators4h.rsi} (${indicators4h.rsiCondition})
+- Trend: ${indicators4h.trend} | MACD: ${indicators4h.macdSignal}
+- Entry: $${technical.entry_zone?.low}-$${technical.entry_zone?.high}
 - Stop Loss: $${technical.stop_loss}
-- Take Profit 1: $${technical.take_profit_1}
-- Take Profit 2: $${technical.take_profit_2}
+- TP1: $${technical.take_profit_1} | TP2: $${technical.take_profit_2}
 - Summary: ${technical.summary}
 
-## News/Sentiment Analyst Report
-- Sentiment: ${news.sentiment} (Confidence: ${news.confidence}%)
-- Strength: ${news.strength}/10
-- Key Catalysts: ${news.key_catalysts?.join(', ')}
-- Risks: ${news.risks?.join(', ')}
+## News & Sentiment  
+- Sentiment: ${news.sentiment} | Confidence: ${news.confidence}%
 - Summary: ${news.summary}
 
-## Learning From Past Trades (${pair})
-Recent win rate: ${recentWinRate}%
-${memoryText}
+## Past Performance
+Win rate: ${recentWinRate}%
+${memoryText.slice(0, 500)}
 
-## Your Mandate
-- ONLY trade when technical AND news AGREE on direction
-- Minimum final confidence: 72% to open a trade
-- If any doubt: SKIP. Missing a trade costs nothing. A bad trade costs money.
-- This is REAL money. Think like a professional, not a gambler.
-- Learn from past mistakes shown above
+## TRADING RULES
+- Trade if technical confidence ≥ 55% AND strength ≥ 4
+- In EXTREME FEAR: go LONG if RSI < 45 and technical says LONG — news doesn't need to agree
+- In UPTREND/DOWNTREND: follow the trend, don't fight it
+- SIDEWAYS + volume spike = trade the breakout direction
+- Risk/reward must be at least 1.5
+- Only SKIP if setup is genuinely unclear or R/R is bad
 
-## Required Response (JSON only, no other text):
+## JSON response only:
 {
   "decision": "LONG" | "SHORT" | "SKIP",
   "confidence": 0-100,
-  "entry_price": price or null,
-  "stop_loss": price or null,
-  "take_profit_1": price or null,
-  "take_profit_2": price or null,
-  "risk_reward": ratio as number or null,
+  "entry_price": price,
+  "stop_loss": price,
+  "take_profit_1": price,
+  "take_profit_2": price,
+  "risk_reward": number,
   "position_size_multiplier": 0.5-1.5,
-  "reasoning": "detailed 3-4 sentence reasoning",
-  "risk_factors": ["risk1", "risk2"],
-  "lesson_from_memory": "what past trades taught you about this setup",
-  "skip_reason": "why skipping if SKIP decision"
+  "reasoning": "2-3 sentences why",
+  "risk_factors": ["risk1"],
+  "lesson_from_memory": "one line",
+  "skip_reason": "only if SKIP"
 }`;
 
   try {
     const response = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 1200,
+      model: SMART_MODEL,
+      max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }]
     });
-
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    try {
-      const response = await client.messages.create({
-        model: FALLBACK_MODEL,
-        max_tokens: 1200,
-        messages: [{ role: 'user', content: prompt }]
-      });
-      const text = response.content[0].text.replace(/```json|```/g, '').trim();
-      return JSON.parse(text);
-    } catch (fallbackErr) {
-      return { decision: 'SKIP', confidence: 0, skip_reason: 'Analysis system error' };
-    }
+    return { decision: 'SKIP', confidence: 0, skip_reason: 'Analysis system error' };
   }
 }
 
@@ -346,7 +311,7 @@ Respond with ONLY a one sentence lesson starting with "When RSI..." or "In ${mar
 
   try {
     const response = await client.messages.create({
-      model: FALLBACK_MODEL, // Use cheaper model for lessons
+      model: CHEAP_MODEL,
       max_tokens: 100,
       messages: [{ role: 'user', content: prompt }]
     });

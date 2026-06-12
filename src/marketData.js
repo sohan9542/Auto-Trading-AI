@@ -5,6 +5,7 @@ const {
   RSI, MACD, BollingerBands, EMA, SMA, ATR, Stochastic
 } = require('technicalindicators');
 
+// Public market data endpoint — works from any region (Railway US servers included)
 const BINANCE_BASE = 'https://data-api.binance.vision/api/v3';
 
 // Fetch OHLCV candles from Binance
@@ -190,41 +191,33 @@ async function getFearAndGreed() {
   }
 }
 
-// Crypto news from CryptoPanic
+// Crypto news from CryptoCompare (free, no API key required)
 async function getCryptoNews(pair) {
   try {
-    const coin = pair.replace('USDT', '').toLowerCase();
-    const response = await axios.get('https://cryptopanic.com/api/v1/posts/', {
-      params: {
-        auth_token: process.env.CRYPTOPANIC_API_KEY,
-        currencies: coin.toUpperCase(),
-        filter: 'hot',
-        limit: 20
-      },
+    const coin = pair.replace('USDT', '').toUpperCase();
+    const response = await axios.get('https://min-api.cryptocompare.com/data/v2/news/', {
+      params: { lang: 'EN', categories: coin },
       timeout: 10000
     });
 
-    if (!response.data?.results) return [];
+    if (!response.data?.Data) return [];
 
-    return response.data.results.slice(0, 15).map(post => ({
-      title: post.title,
-      source: post.source?.title || 'Unknown',
-      publishedAt: post.published_at,
-      sentiment: post.votes ? analyzeSentiment(post.votes) : 'NEUTRAL',
-      url: post.url
-    }));
+    // Only news from last 12 hours, most recent first
+    const twelveHoursAgo = Date.now() / 1000 - 12 * 3600;
+    return response.data.Data
+      .filter(post => post.published_on > twelveHoursAgo)
+      .slice(0, 15)
+      .map(post => ({
+        title: post.title,
+        source: post.source_info?.name || post.source || 'Unknown',
+        publishedAt: new Date(post.published_on * 1000).toISOString(),
+        sentiment: 'NEUTRAL', // Claude judges sentiment from the headline itself
+        url: post.url
+      }));
   } catch (err) {
     console.error('News fetch failed:', err.message);
     return [];
   }
-}
-
-function analyzeSentiment(votes) {
-  const bullish = (votes.positive || 0) + (votes.liked || 0);
-  const bearish = (votes.negative || 0) + (votes.disliked || 0);
-  if (bullish > bearish * 1.5) return 'BULLISH';
-  if (bearish > bullish * 1.5) return 'BEARISH';
-  return 'NEUTRAL';
 }
 
 // Collect ALL market data in one call

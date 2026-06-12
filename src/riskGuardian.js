@@ -5,7 +5,7 @@ const { query, getSetting, setSetting } = require('../database/db');
 const CONFIG = {
   maxRiskPerTrade: parseFloat(process.env.MAX_RISK_PER_TRADE || 1.5),   // % of portfolio
   maxOpenTrades: parseInt(process.env.MAX_OPEN_TRADES || 3),
-  minConfidence: parseInt(process.env.MIN_CONFIDENCE || 72),
+  minConfidence: parseInt(process.env.MIN_CONFIDENCE || 62),
   dailyLossLimit: parseFloat(process.env.DAILY_LOSS_LIMIT || 4),        // %
   weeklyLossLimit: parseFloat(process.env.WEEKLY_LOSS_LIMIT || 8),      // %
   minRiskReward: 1.5,

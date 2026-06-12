@@ -4,7 +4,17 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 5,                        // Neon free tier friendly
+  idleTimeoutMillis: 30000,      // drop idle clients BEFORE Neon kills them
+  connectionTimeoutMillis: 10000,
+  keepAlive: true
+});
+
+// CRITICAL: Neon closes idle connections — without this handler,
+// a dropped idle client crashes the whole process
+pool.on('error', (err) => {
+  console.warn('⚠️ DB idle connection dropped (handled, reconnecting):', err.message);
 });
 
 async function initializeDatabase() {
@@ -125,12 +135,25 @@ async function initializeDatabase() {
 }
 
 async function query(text, params) {
-  try {
-    const result = await pool.query(text, params);
-    return result;
-  } catch (err) {
-    console.error('DB Query Error:', err.message);
-    throw err;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const result = await pool.query(text, params);
+      return result;
+    } catch (err) {
+      const isTransient =
+        err.message.includes('Connection terminated') ||
+        err.message.includes('ECONNRESET') ||
+        err.message.includes('ETIMEDOUT') ||
+        err.message.includes('timeout') ||
+        err.message.includes('connection');
+      if (isTransient && attempt < 3) {
+        console.warn(`⚠️ DB transient error (attempt ${attempt}/3), retrying in ${attempt}s...`);
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      console.error('DB Query Error:', err.message);
+      throw err;
+    }
   }
 }
 

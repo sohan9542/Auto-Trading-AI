@@ -8,6 +8,7 @@ const { runFullAnalysis } = require('./aiBrain');
 const { validateTrade, calculatePositionSize, resetDailyCounters, resetWeeklyCounters } = require('./riskGuardian');
 const { openTrade, monitorOpenTrades } = require('./executor');
 const { initTelegram, send } = require('./telegram');
+const { initGridTables, monitorGrids, adjustGridsForTrend } = require('./gridBot');
 
 const PAIRS = (process.env.TRADE_PAIRS || 'BTCUSDT,ETHUSDT').split(',');
 
@@ -39,6 +40,9 @@ async function runAnalysisCycle() {
       // 2. Run 3-stage AI analysis
       const analysis = await runFullAnalysis(marketData);
       const { verdict } = analysis;
+
+      // 2b. Grid auto-management: pause grids in strong trends, resume in chop
+      await adjustGridsForTrend(pair, marketData.indicators4h.trend, send);
 
       // 3. If AI says trade, validate against risk rules
       if (['LONG', 'SHORT'].includes(verdict.decision)) {
@@ -137,6 +141,7 @@ async function start() {
 
   // 1. Initialize database
   await initializeDatabase();
+  await initGridTables();
 
   // 2. Set initial portfolio if first run
   const portfolio = await getSetting('current_portfolio');
@@ -157,6 +162,11 @@ async function start() {
   // Monitor open trades every 5 minutes
   cron.schedule('*/5 * * * *', () => {
     monitorOpenTrades(send);
+  });
+
+  // Monitor grids every 2 minutes (grids need faster fills)
+  cron.schedule('*/2 * * * *', () => {
+    monitorGrids(send);
   });
 
   // Daily report at 23:55 UTC

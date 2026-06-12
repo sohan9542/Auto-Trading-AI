@@ -320,6 +320,87 @@ function initTelegram(onForceCheck) {
     );
   });
 
+  // ============ GRID COMMANDS ============
+
+  bot.onText(/\/gridstart (\S+) (\S+) (\S+) (\S+) (\S+)/, async (msg, match) => {
+    const { startGrid } = require('./gridBot');
+    const pair = match[1].toUpperCase();
+    const lower = parseFloat(match[2]);
+    const upper = parseFloat(match[3]);
+    const levels = parseInt(match[4]);
+    const capital = parseFloat(match[5]);
+
+    if (isNaN(lower) || isNaN(upper) || isNaN(levels) || isNaN(capital)) {
+      return send('⚠️ Format: /gridstart PAIR LOWER UPPER LEVELS CAPITAL\nExample: /gridstart BTCUSDT 64000 70000 10 200');
+    }
+
+    const result = await startGrid(pair, lower, upper, levels, capital);
+    if (result.success) {
+      send(
+        `🕸️ *Grid Started — ${result.pair}*\n\n` +
+        `Range: ${result.range}\n` +
+        `Levels: ${result.levels} (step $${result.step})\n` +
+        `Capital per level: $${result.capitalPerLevel}\n` +
+        `Profit per cycle: ~${result.profitPerCycle}\n` +
+        `Current price: $${result.currentPrice}\n\n` +
+        `The grid buys every dip to a level and sells at the next level up. ` +
+        `Auto-pauses if AI detects a strong trend. ` +
+        `Emergency stop if price breaks 3% below $${lower}.`
+      );
+    } else {
+      send(`⚠️ Grid not started: ${result.error}`);
+    }
+  });
+
+  bot.onText(/\/gridstart$/, async () => {
+    send(
+      `🕸️ *Start a Grid*\n\n` +
+      `Format:\n/gridstart PAIR LOWER UPPER LEVELS CAPITAL\n\n` +
+      `Example:\n/gridstart BTCUSDT 64000 70000 10 200\n\n` +
+      `= grid on BTC between $64k-$70k, 10 levels, $200 total capital.\n\n` +
+      `Tips:\n` +
+      `• Set range around current price (check /lastanalysis)\n` +
+      `• Wider range = safer but slower profits\n` +
+      `• Max 30% of portfolio per grid`
+    );
+  });
+
+  bot.onText(/\/gridstop (\S+)/, async (msg, match) => {
+    const { stopGrid } = require('./gridBot');
+    const pair = match[1].toUpperCase();
+    const result = await stopGrid(pair, send);
+    if (result.success) {
+      send(
+        `🛑 *Grid Stopped — ${pair}*\n\n` +
+        `Completed cycles: ${result.cycles}\n` +
+        `Cycle profits: +$${(result.totalProfit - result.finalPositionsPnl).toFixed(2)}\n` +
+        `Final positions P&L: ${result.finalPositionsPnl >= 0 ? '+' : ''}$${result.finalPositionsPnl.toFixed(2)}\n` +
+        `Total: ${result.totalProfit >= 0 ? '+' : ''}$${result.totalProfit.toFixed(2)}`
+      );
+    } else {
+      send(`⚠️ ${result.error}`);
+    }
+  });
+
+  bot.onText(/\/gridstatus/, async () => {
+    const { getGridStatus } = require('./gridBot');
+    const grids = await getGridStatus();
+    if (grids.length === 0) {
+      return send('🕸️ No active grids.\n\nStart one with /gridstart\nGrids earn from sideways markets — perfect when the AI keeps skipping.');
+    }
+
+    let text = `🕸️ *Active Grids*\n\n`;
+    for (const g of grids) {
+      const emoji = g.status === 'active' ? '🟢' : '⏸️';
+      text += `${emoji} *${g.pair}* ${g.status === 'paused' ? `(paused: ${g.pauseReason})` : ''}\n` +
+        `Range: ${g.range} | Now: $${g.currentPrice}\n` +
+        `Profit: +$${g.totalProfit} (${g.cycles} cycles)\n` +
+        `Holding: ${g.activeHoldings} levels ($${g.investedNow})\n` +
+        `Since: ${g.runningSince}\n\n`;
+    }
+    send(text);
+  });
+
   console.log('✅ Telegram bot initialized');
   return bot;
 }
