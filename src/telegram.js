@@ -401,6 +401,105 @@ function initTelegram(onForceCheck) {
     send(text);
   });
 
+  // ── /gridpct: start a geometric (percentage-spaced) grid ──────────────────
+  bot.onText(/\/gridpct (\S+) (\S+) (\S+) (\S+) (\S+)/, async (msg, match) => {
+    const { startGridPercent } = require('./gridBot');
+    const pair    = match[1].toUpperCase();
+    const lower   = parseFloat(match[2]);
+    const upper   = parseFloat(match[3]);
+    const spacing = parseFloat(match[4]);
+    const capital = parseFloat(match[5]);
+
+    if ([lower, upper, spacing, capital].some(isNaN)) {
+      return send('⚠️ Format: /gridpct PAIR LOWER UPPER SPACING% CAPITAL\nExample: /gridpct BTCUSDT 95000 110000 1.0 500');
+    }
+
+    const result = await startGridPercent(pair, lower, upper, spacing, capital);
+    if (result.success) {
+      send(
+        `🕸️ *Geometric Grid Started — ${result.pair}*\n\n` +
+        `Range: ${result.range}\n` +
+        `Spacing: ${result.spacingPct}% between levels\n` +
+        `Levels: ${result.levels}\n` +
+        `Capital/level: $${result.capitalPerLevel}\n` +
+        `Profit/cycle: ${result.profitPerCycle}\n` +
+        `Current price: $${result.currentPrice}\n\n` +
+        `Grid is now active. Each completed buy→sell cycle earns ~${result.profitPerCycle}.`
+      );
+    } else {
+      send(`⚠️ Grid error: ${result.error}`);
+    }
+  });
+
+  bot.onText(/\/gridpct$/, () => {
+    send(
+      `🕸️ *Start a Percentage-Spaced Grid*\n\n` +
+      `Format:\n/gridpct PAIR LOWER UPPER SPACING% CAPITAL\n\n` +
+      `Example:\n/gridpct BTCUSDT 95000 110000 1.0 500\n\n` +
+      `= geometric grid on BTC, $95k–$110k, 1% between each level, $500 capital.\n\n` +
+      `Profit per completed cycle ≈ spacing% minus fees.\n` +
+      `Use /gridsuggest BTCUSDT to get a range suggestion first.`
+    );
+  });
+
+  // ── /gridsuggest: auto-suggest a grid range from Bollinger Bands + ATR ────
+  bot.onText(/\/gridsuggest ?(\S+)?/, async (msg, match) => {
+    const { suggestGrid } = require('./gridBot');
+    const pair    = (match[1] || 'BTCUSDT').toUpperCase();
+    const spacing = 1.0;
+    send(`🔍 Analysing ${pair} range…`);
+    const s = await suggestGrid(pair, spacing);
+    if (s.error) return send(`⚠️ ${s.error}`);
+    send(
+      `🕸️ *Grid Suggestion — ${pair}*\n\n` +
+      `Current price: $${s.currentPrice.toLocaleString()}\n\n` +
+      `Suggested range:\n` +
+      `  Lower: $${s.suggestedLower.toLocaleString()}\n` +
+      `  Upper: $${s.suggestedUpper.toLocaleString()}\n` +
+      `  Levels: ~${s.levels} (at ${spacing}% spacing)\n\n` +
+      `Based on:\n` +
+      `  Bollinger Bands: $${s.bbLower.toLocaleString()} – $${s.bbUpper.toLocaleString()}\n` +
+      `  Daily ATR: $${s.atr.toLocaleString()}\n\n` +
+      `To start:\n` +
+      `/gridpct ${pair} ${s.suggestedLower} ${s.suggestedUpper} ${spacing} YOUR_CAPITAL\n\n` +
+      `_${s.note}_`
+    );
+  });
+
+  // ── /rsistatus: show current RSI+EMA indicator state for all pairs ─────────
+  bot.onText(/\/rsistatus/, async () => {
+    const { getCandles } = require('./marketData');
+    const { getState }   = require('./strategies/rsiEma');
+    const pairs = (process.env.TRADE_PAIRS || 'BTCUSDT,ETHUSDT').split(',');
+    let text = `📐 *RSI+EMA Indicator State*\n\n`;
+
+    for (const pair of pairs) {
+      try {
+        const candles = await getCandles(pair, '4h', 230);
+        const state   = getState(candles);
+        if (!state) { text += `${pair}: insufficient data\n\n`; continue; }
+        const cross = state.emaCross === 'BULLISH' ? '📈 BULL' : '📉 BEAR';
+        const side  = state.trendSide === 'ABOVE' ? '⬆️ above EMA200' : '⬇️ below EMA200';
+        text +=
+          `*${pair}*\n` +
+          `Price: $${state.price.toLocaleString()} (${side})\n` +
+          `EMA9: $${state.emaFast.toLocaleString()} | EMA21: $${state.emaSlow.toLocaleString()}\n` +
+          `EMA200: $${state.emaTrend?.toLocaleString() || 'N/A'}\n` +
+          `RSI: ${state.rsi} | ATR: $${state.atr}\n` +
+          `Cross bias: ${cross}\n\n`;
+      } catch (e) {
+        text += `${pair}: error — ${e.message}\n\n`;
+      }
+    }
+
+    const enabled = process.env.ENABLE_RSI_EMA === 'true';
+    text += enabled
+      ? `✅ RSI+EMA strategy is active (ENABLE_RSI_EMA=true)`
+      : `⚪ RSI+EMA inactive. Add ENABLE_RSI_EMA=true to .env to enable.`;
+
+    send(text);
+  });
+
   console.log('✅ Telegram bot initialized');
   return bot;
 }

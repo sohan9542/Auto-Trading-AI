@@ -3,12 +3,16 @@
 require('dotenv').config();
 const cron = require('node-cron');
 const { initializeDatabase, getSetting, setSetting, query, logError } = require('../database/db');
-const { collectMarketData } = require('./marketData');
+const { collectMarketData, getCandles } = require('./marketData');
 const { runFullAnalysis } = require('./aiBrain');
 const { validateTrade, calculatePositionSize, resetDailyCounters, resetWeeklyCounters } = require('./riskGuardian');
 const { openTrade, monitorOpenTrades } = require('./executor');
 const { initTelegram, send } = require('./telegram');
 const { initGridTables, monitorGrids, adjustGridsForTrend } = require('./gridBot');
+const { detectSignal, getState } = require('./strategies/rsiEma');
+
+// Set ENABLE_RSI_EMA=true in .env to run RSI+EMA alongside the AI strategy
+const RSI_EMA_ENABLED = process.env.ENABLE_RSI_EMA === 'true';
 
 const PAIRS = (process.env.TRADE_PAIRS || 'BTCUSDT,ETHUSDT').split(',');
 
@@ -89,12 +93,82 @@ async function runAnalysisCycle() {
         // Silent skip - only notify on /lastanalysis to avoid spam
       }
     }
+    // Run RSI+EMA strategy check (if enabled) after AI cycle
+    await runRsiEmaStrategy();
+
   } catch (err) {
     console.error('❌ Analysis cycle failed:', err.message);
     await logError('ANALYSIS_CYCLE_FAILED', err.message);
     send(`⚠️ Analysis cycle error: ${err.message}\n\nWill retry next cycle. If this repeats, check /status.`);
   } finally {
     isAnalyzing = false;
+  }
+}
+
+// ============ RSI+EMA STRATEGY CYCLE ============
+// Runs after the main AI cycle — checks each pair for EMA crossover signals
+// and opens trades independently if signal + risk rules both approve.
+async function runRsiEmaStrategy() {
+  if (!RSI_EMA_ENABLED) return;
+
+  const isPaused = await getSetting('is_paused');
+  if (isPaused === 'true') return;
+
+  for (const pair of PAIRS) {
+    try {
+      // Need 220+ candles for EMA200 warmup
+      const candles = await getCandles(pair, '4h', 230);
+      const sig = detectSignal(candles);
+
+      if (!sig.signal) {
+        console.log(`📐 RSI+EMA ${pair}: no signal — ${sig.reason}`);
+        continue;
+      }
+
+      console.log(`📐 RSI+EMA ${pair}: ${sig.signal} signal (conf ${sig.confidence}%) — ${sig.reason}`);
+
+      // Build a verdict object compatible with riskGuardian + executor
+      const verdict = {
+        decision:               sig.signal,
+        confidence:             sig.confidence,
+        entry_price:            sig.entry,
+        stop_loss:              sig.stopLoss,
+        take_profit_1:          sig.tp1,
+        take_profit_2:          sig.tp2,
+        position_size_multiplier: 1.0,
+        reasoning:              sig.reason,
+        skip_reason:            null,
+      };
+
+      const validation = await validateTrade(verdict, pair);
+
+      if (validation.approved) {
+        const position = await calculatePositionSize(verdict, validation.sizeMultiplier);
+        const result   = await openTrade(verdict, pair, position, sig.confidence);
+
+        if (result.success) {
+          send(
+            `📐 *RSI+EMA SIGNAL* ${result.mode === 'live' ? '🔴 LIVE' : '📝 Paper'}\n\n` +
+            `${sig.signal === 'LONG' ? '📈' : '📉'} *${pair}* ${sig.signal}\n\n` +
+            `Entry: $${sig.entry}\n` +
+            `Stop Loss: $${sig.stopLoss} (2×ATR)\n` +
+            `TP1: $${sig.tp1} (+${((sig.tp1Rr || 1.5) * 100 / 100).toFixed(1)}R — close 50%)\n` +
+            `TP2: $${sig.tp2} (+${((sig.tp2Rr || 3.0) * 100 / 100).toFixed(1)}R — close rest)\n` +
+            `Risk/Reward: 1:${validation.riskReward?.toFixed(1)}\n` +
+            `Size: $${position.sizeUsdt} (risking $${position.riskUsdt})\n` +
+            `Confidence: ${sig.confidence}%\n\n` +
+            `📊 *Indicators:*\n` +
+            `RSI: ${sig.rsi} | EMA9: $${sig.emaFast} | EMA21: $${sig.emaSlow}\n` +
+            `EMA200: $${sig.emaTrend} | ATR: $${sig.atr}`
+          );
+        }
+      } else {
+        console.log(`🛡️ RSI+EMA ${pair} blocked: ${validation.reason}`);
+      }
+    } catch (err) {
+      console.error(`RSI+EMA strategy error on ${pair}:`, err.message);
+      await logError('RSI_EMA_STRATEGY_FAILED', err.message, pair);
+    }
   }
 }
 

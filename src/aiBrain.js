@@ -150,13 +150,14 @@ async function stageFinalVerdict(marketData, technical, news, memory) {
   const { pair, indicators4h } = marketData;
 
   const memoryText = memory.length > 0
-    ? memory.slice(0, 10).map(t =>
-        `- ${t.direction} trade: ${t.pnl_percent > 0 ? '✅ WIN' : '❌ LOSS'} ${t.pnl_percent?.toFixed(2)}% | RSI was ${t.rsi} | Trend: ${t.trend} | ${t.lesson || 'No lesson recorded'}`
-      ).join('\n')
+    ? memory.slice(0, 10).map(t => {
+        const pnl = parseFloat(t.pnl_percent);
+        return `- ${t.direction} trade: ${pnl > 0 ? '✅ WIN' : '❌ LOSS'} ${isNaN(pnl) ? 'N/A' : pnl.toFixed(2)}% | RSI was ${t.rsi} | Trend: ${t.trend} | ${t.lesson || 'No lesson recorded'}`;
+      }).join('\n')
     : '- No previous trades to learn from yet';
 
   const recentWinRate = memory.length > 0
-    ? (memory.filter(t => t.pnl_percent > 0).length / memory.length * 100).toFixed(0)
+    ? (memory.filter(t => parseFloat(t.pnl_percent) > 0).length / memory.length * 100).toFixed(0)
     : 'N/A';
 
   const fearGreedValue = marketData?.fearGreed?.value || 50;
