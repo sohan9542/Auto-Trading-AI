@@ -90,16 +90,28 @@ async function runAnalysisCycle() {
         }
       } else {
         console.log(`⏭️ ${pair}: SKIP — ${verdict.skip_reason || 'No clear setup'}`);
-        // Silent skip - only notify on /lastanalysis to avoid spam
+        send(
+          `⏭️ *${pair} — SKIP*\n\n` +
+          `🔍 Technical: ${analysis.technical?.bias || 'N/A'} (${analysis.technical?.confidence || 0}%)\n` +
+          `📰 Sentiment: ${analysis.news?.sentiment || 'N/A'} (${analysis.news?.confidence || 0}%)\n` +
+          `📊 RSI: ${marketData.indicators4h.rsi} | Trend: ${marketData.indicators4h.trend}\n` +
+          `💭 Reason: ${verdict.skip_reason || verdict.reasoning || 'No clear setup at this time'}\n\n` +
+          `_Next check in 4h or /forcecheck again_`
+        );
       }
     }
+
     // Run RSI+EMA strategy check (if enabled) after AI cycle
     await runRsiEmaStrategy();
 
   } catch (err) {
     console.error('❌ Analysis cycle failed:', err.message);
     await logError('ANALYSIS_CYCLE_FAILED', err.message);
-    send(`⚠️ Analysis cycle error: ${err.message}\n\nWill retry next cycle. If this repeats, check /status.`);
+    send(
+      `⚠️ *Analysis cycle error*\n\n` +
+      `${err.message}\n\n` +
+      `Will retry next cycle. Check /status for details.`
+    );
   } finally {
     isAnalyzing = false;
   }

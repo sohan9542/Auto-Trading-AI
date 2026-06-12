@@ -86,7 +86,8 @@ ${indicators4h.lastCandles?.map(c => `${c.time}: O:${c.open} H:${c.high} L:${c.l
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    return { bias: 'NEUTRAL', confidence: 0, summary: 'Analysis failed', key_signals: [], entry_zone: {}, stop_loss: 0, take_profit_1: 0, take_profit_2: 0, strength: 0 };
+    console.error('Stage 1 (technical) failed:', err.message);
+    return { bias: 'NEUTRAL', confidence: 0, summary: `Stage 1 error: ${err.message}`, key_signals: [], entry_zone: {}, stop_loss: 0, take_profit_1: 0, take_profit_2: 0, strength: 0 };
   }
 }
 
@@ -141,7 +142,8 @@ ${newsText}
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    return { sentiment: 'NEUTRAL', confidence: 50, summary: 'News analysis failed', key_catalysts: [], risks: [], strength: 5, news_impact: 'LOW' };
+    console.error('Stage 2 (news) failed:', err.message);
+    return { sentiment: 'NEUTRAL', confidence: 50, summary: `Stage 2 error: ${err.message}`, key_catalysts: [], risks: [], strength: 5, news_impact: 'LOW' };
   }
 }
 
@@ -218,7 +220,8 @@ ${memoryText.slice(0, 500)}
     const text = response.content[0].text.replace(/```json|```/g, '').trim();
     return JSON.parse(text);
   } catch (err) {
-    return { decision: 'SKIP', confidence: 0, skip_reason: 'Analysis system error' };
+    console.error('Stage 3 (verdict) failed:', err.message);
+    return { decision: 'SKIP', confidence: 0, skip_reason: `Claude API error: ${err.message}` };
   }
 }
 
