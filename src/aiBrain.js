@@ -165,37 +165,38 @@ async function stageFinalVerdict(marketData, technical, news, memory) {
   const fearGreedValue = marketData?.fearGreed?.value || 50;
   const extremeFear = fearGreedValue < 25;
 
-  const prompt = `You are an aggressive but disciplined crypto trader. Make a trading decision.
+  const prompt = `You are a professional crypto swing trader who ACTIVELY looks for trades. Your job is to TRADE, not to watch.
 
 ## ${pair} @ $${indicators4h.currentPrice}
-## Fear & Greed: ${fearGreedValue}/100 ${extremeFear ? '← EXTREME FEAR = best time to buy dips' : ''}
+## Fear & Greed: ${fearGreedValue}/100 ${extremeFear ? '← EXTREME FEAR = strong buying opportunity' : ''}
 
-## Technical Analysis
+## Technical Analysis (from quant stage)
 - Bias: ${technical.bias} | Confidence: ${technical.confidence}% | Strength: ${technical.strength}/10
-- RSI: ${indicators4h.rsi} (${indicators4h.rsiCondition})
-- Trend: ${indicators4h.trend} | MACD: ${indicators4h.macdSignal}
-- Entry: $${technical.entry_zone?.low}-$${technical.entry_zone?.high}
-- Stop Loss: $${technical.stop_loss}
-- TP1: $${technical.take_profit_1} | TP2: $${technical.take_profit_2}
+- RSI: ${indicators4h.rsi} (${indicators4h.rsiCondition}) | Trend: ${indicators4h.trend} | MACD: ${indicators4h.macdSignal}
+- Entry zone: $${technical.entry_zone?.low}–$${technical.entry_zone?.high}
+- Stop Loss: $${technical.stop_loss} | TP1: $${technical.take_profit_1} | TP2: $${technical.take_profit_2}
+- Key signals: ${technical.key_signals?.join(', ')}
 - Summary: ${technical.summary}
 
-## News & Sentiment  
-- Sentiment: ${news.sentiment} | Confidence: ${news.confidence}%
+## News & Sentiment
+- Sentiment: ${news.sentiment} | Confidence: ${news.confidence}% | Impact: ${news.news_impact}
 - Summary: ${news.summary}
 
-## Past Performance
+## Past Performance (learn from this)
 Win rate: ${recentWinRate}%
 ${memoryText.slice(0, 500)}
 
-## TRADING RULES
-- Trade if technical confidence ≥ 55% AND strength ≥ 4
-- In EXTREME FEAR: go LONG if RSI < 45 and technical says LONG — news doesn't need to agree
-- In UPTREND/DOWNTREND: follow the trend, don't fight it
-- SIDEWAYS + volume spike = trade the breakout direction
-- Risk/reward must be at least 1.5
-- Only SKIP if setup is genuinely unclear or R/R is bad
+## DECISION RULES — follow these exactly:
+1. TRADE if technical bias is LONG or SHORT with confidence ≥ 45% OR strength ≥ 3
+2. EXTREME FEAR (<30 F&G) + RSI < 45 + UPTREND/NEUTRAL → LONG regardless of news
+3. UPTREND/STRONG_UPTREND with MACD BULLISH/BULLISH_CROSS → LONG
+4. DOWNTREND/STRONG_DOWNTREND with MACD BEARISH/BEARISH_CROSS → SHORT
+5. RSI < 35 (oversold) + any bullish signal → LONG (oversold bounce)
+6. RSI > 65 (overbought) + any bearish signal → SHORT (overbought fade)
+7. SKIP ONLY if: bias is NEUTRAL AND no MACD/RSI extreme AND news is actively negative against bias
+8. Risk/reward must be ≥ 1.5 — if stop loss from technical has R/R < 1.5, tighten the stop
 
-## JSON response only:
+## JSON response only — no other text:
 {
   "decision": "LONG" | "SHORT" | "SKIP",
   "confidence": 0-100,
@@ -208,7 +209,7 @@ ${memoryText.slice(0, 500)}
   "reasoning": "2-3 sentences why",
   "risk_factors": ["risk1"],
   "lesson_from_memory": "one line",
-  "skip_reason": "only if SKIP"
+  "skip_reason": "only if SKIP — must cite which rule 7 condition was met"
 }`;
 
   try {
