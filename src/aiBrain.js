@@ -2,17 +2,19 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { query, getSetting } = require('../database/db');
+const { parseModelJson } = require('./utils/parseJson');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Cost optimization: cheap model for data processing, best model only for final decision
-const CHEAP_MODEL = 'claude-haiku-4-5-20251001';   // ~$0.001 per call
-const SMART_MODEL = 'claude-sonnet-4-6';             // ~$0.01 per call
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001'; // ~$0.001 per call
+const SMART_MODEL = 'claude-sonnet-4-6'; // ~$0.01 per call
 
 // Get last N trade outcomes for learning
 async function getLearningMemory(pair, limit = 20) {
   try {
-    const result = await query(`
+    const result = await query(
+      `
       SELECT t.direction, t.entry_price, t.exit_price, t.pnl_percent, 
              t.close_reason, t.confidence, a.technical_summary, 
              a.news_summary, a.rsi, a.trend, a.macd_signal,
@@ -24,10 +26,12 @@ async function getLearningMemory(pair, limit = 20) {
       WHERE t.pair = $1 AND t.status IN ('closed', 'stopped')
       ORDER BY t.exit_time DESC
       LIMIT $2
-    `, [pair, limit]);
+    `,
+      [pair, limit]
+    );
 
     return result.rows;
-  } catch (err) {
+  } catch (_err) {
     return [];
   }
 }
@@ -51,8 +55,8 @@ Analyze ONLY the technical data below and give a directional bias.
 - ATR: $${indicators4h.atr}
 - Volume Ratio: ${indicators4h.volumeRatio}x average
 - Trend: ${indicators4h.trend}
-- Swing Highs: ${indicators4h.swingHighs?.slice(0,2).join(', ')}
-- Swing Lows: ${indicators4h.swingLows?.slice(0,2).join(', ')}
+- Swing Highs: ${indicators4h.swingHighs?.slice(0, 2).join(', ')}
+- Swing Lows: ${indicators4h.swingLows?.slice(0, 2).join(', ')}
 
 ### 1H Chart (Entry Timing)
 - RSI: ${indicators1h.rsi} | Trend: ${indicators1h.trend} | MACD: ${indicators1h.macdSignal}
@@ -61,7 +65,7 @@ Analyze ONLY the technical data below and give a directional bias.
 - RSI: ${indicators1d.rsi} | Trend: ${indicators1d.trend} | EMA50: $${indicators1d.ema50}
 
 ### Last 5 Candles (4H)
-${indicators4h.lastCandles?.map(c => `${c.time}: O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`).join('\n')}
+${indicators4h.lastCandles?.map((c) => `${c.time}: O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`).join('\n')}
 
 ## Required Response (JSON only, no other text):
 {
@@ -81,13 +85,22 @@ ${indicators4h.lastCandles?.map(c => `${c.time}: O:${c.open} H:${c.high} L:${c.l
     const response = await client.messages.create({
       model: CHEAP_MODEL,
       max_tokens: 800,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
     });
-    const text = response.content[0].text.replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    return parseModelJson(response.content[0].text);
   } catch (err) {
     console.error('Stage 1 (technical) failed:', err.message);
-    return { bias: 'NEUTRAL', confidence: 0, summary: `Stage 1 error: ${err.message}`, key_signals: [], entry_zone: {}, stop_loss: 0, take_profit_1: 0, take_profit_2: 0, strength: 0 };
+    return {
+      bias: 'NEUTRAL',
+      confidence: 0,
+      summary: `Stage 1 error: ${err.message}`,
+      key_signals: [],
+      entry_zone: {},
+      stop_loss: 0,
+      take_profit_1: 0,
+      take_profit_2: 0,
+      strength: 0,
+    };
   }
 }
 
@@ -95,9 +108,10 @@ ${indicators4h.lastCandles?.map(c => `${c.time}: O:${c.open} H:${c.high} L:${c.l
 async function stageNews(marketData) {
   const { pair, news, fearGreed, stats24h, marketContext } = marketData;
 
-  const newsText = news.length > 0
-    ? news.map(n => `- [${n.sentiment}] ${n.title} (${n.source})`).join('\n')
-    : '- No major news found';
+  const newsText =
+    news.length > 0
+      ? news.map((n) => `- [${n.sentiment}] ${n.title} (${n.source})`).join('\n')
+      : '- No major news found';
 
   const prompt = `You are an elite crypto market analyst specializing in news sentiment and fundamental analysis.
 Analyze ONLY the news and market sentiment data below.
@@ -137,13 +151,20 @@ ${newsText}
     const response = await client.messages.create({
       model: CHEAP_MODEL,
       max_tokens: 600,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
     });
-    const text = response.content[0].text.replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    return parseModelJson(response.content[0].text);
   } catch (err) {
     console.error('Stage 2 (news) failed:', err.message);
-    return { sentiment: 'NEUTRAL', confidence: 50, summary: `Stage 2 error: ${err.message}`, key_catalysts: [], risks: [], strength: 5, news_impact: 'LOW' };
+    return {
+      sentiment: 'NEUTRAL',
+      confidence: 50,
+      summary: `Stage 2 error: ${err.message}`,
+      key_catalysts: [],
+      risks: [],
+      strength: 5,
+      news_impact: 'LOW',
+    };
   }
 }
 
@@ -151,16 +172,24 @@ ${newsText}
 async function stageFinalVerdict(marketData, technical, news, memory) {
   const { pair, indicators4h } = marketData;
 
-  const memoryText = memory.length > 0
-    ? memory.slice(0, 10).map(t => {
-        const pnl = parseFloat(t.pnl_percent);
-        return `- ${t.direction} trade: ${pnl > 0 ? '✅ WIN' : '❌ LOSS'} ${isNaN(pnl) ? 'N/A' : pnl.toFixed(2)}% | RSI was ${t.rsi} | Trend: ${t.trend} | ${t.lesson || 'No lesson recorded'}`;
-      }).join('\n')
-    : '- No previous trades to learn from yet';
+  const memoryText =
+    memory.length > 0
+      ? memory
+          .slice(0, 10)
+          .map((t) => {
+            const pnl = parseFloat(t.pnl_percent);
+            return `- ${t.direction} trade: ${pnl > 0 ? '✅ WIN' : '❌ LOSS'} ${isNaN(pnl) ? 'N/A' : pnl.toFixed(2)}% | RSI was ${t.rsi} | Trend: ${t.trend} | ${t.lesson || 'No lesson recorded'}`;
+          })
+          .join('\n')
+      : '- No previous trades to learn from yet';
 
-  const recentWinRate = memory.length > 0
-    ? (memory.filter(t => parseFloat(t.pnl_percent) > 0).length / memory.length * 100).toFixed(0)
-    : 'N/A';
+  const recentWinRate =
+    memory.length > 0
+      ? (
+          (memory.filter((t) => parseFloat(t.pnl_percent) > 0).length / memory.length) *
+          100
+        ).toFixed(0)
+      : 'N/A';
 
   const fearGreedValue = marketData?.fearGreed?.value || 50;
   const extremeFear = fearGreedValue < 25;
@@ -216,10 +245,9 @@ ${memoryText.slice(0, 500)}
     const response = await client.messages.create({
       model: SMART_MODEL,
       max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
     });
-    const text = response.content[0].text.replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    return parseModelJson(response.content[0].text);
   } catch (err) {
     console.error('Stage 3 (verdict) failed:', err.message);
     return { decision: 'SKIP', confidence: 0, skip_reason: `Claude API error: ${err.message}` };
@@ -233,55 +261,58 @@ async function runFullAnalysis(marketData) {
 
   const startTime = Date.now();
 
-  // Get learning memory
   const memory = await getLearningMemory(pair);
-  console.log(`📚 Loaded ${memory.length} past trade memories`);
 
-  // Run Stage 1 & 2 in parallel
-  console.log('Stage 1: Technical analysis...');
-  console.log('Stage 2: News & sentiment analysis...');
   const [technical, newsAnalysis] = await Promise.all([
     stageTechnical(marketData),
-    stageNews(marketData)
+    stageNews(marketData),
   ]);
 
-  console.log(`✅ Stage 1: ${technical.bias} (${technical.confidence}%)`);
-  console.log(`✅ Stage 2: ${newsAnalysis.sentiment} (${newsAnalysis.confidence}%)`);
-
-  // Stage 3: Final verdict
-  console.log('Stage 3: Final verdict...');
   const verdict = await stageFinalVerdict(marketData, technical, newsAnalysis, memory);
-  console.log(`✅ Stage 3: ${verdict.decision} (${verdict.confidence}%)`);
 
   const analysisTime = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`⚡ Analysis completed in ${analysisTime}s`);
+  console.log(
+    `✅ ${pair}: ${verdict.decision} (${verdict.confidence}%) | tech=${technical.bias} news=${newsAnalysis.sentiment} | ${analysisTime}s`
+  );
 
   // Log analysis to database
   try {
-    await query(`
+    await query(
+      `
       INSERT INTO analysis_log 
         (pair, timeframe, direction, confidence, technical_bias, news_bias, 
          final_decision, reasoning, technical_summary, news_summary,
          rsi, macd_signal, trend, fear_greed_index)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-    `, [
-      pair, '4h', verdict.decision, verdict.confidence,
-      technical.bias, newsAnalysis.sentiment, verdict.decision,
-      verdict.reasoning, technical.summary, newsAnalysis.summary,
-      indicators4h.rsi, indicators4h.macdSignal, indicators4h.trend,
-      marketData.fearGreed.value
-    ]);
+    `,
+      [
+        pair,
+        '4h',
+        verdict.decision,
+        verdict.confidence,
+        technical.bias,
+        newsAnalysis.sentiment,
+        verdict.decision,
+        verdict.reasoning,
+        technical.summary,
+        newsAnalysis.summary,
+        indicators4h.rsi,
+        indicators4h.macdSignal,
+        indicators4h.trend,
+        marketData.fearGreed.value,
+      ]
+    );
 
     // Update total analyses count
     const current = await getSetting('total_analyses');
-    await query(
-      'UPDATE bot_settings SET value = $1 WHERE key = $2',
-      [String(parseInt(current || 0) + 1), 'total_analyses']
-    );
-    await query(
-      'UPDATE bot_settings SET value = $1 WHERE key = $2',
-      [new Date().toISOString(), 'last_analysis']
-    );
+    await query('UPDATE bot_settings SET value = $1 WHERE key = $2', [
+      String(parseInt(current || 0) + 1),
+      'total_analyses',
+    ]);
+    await query('UPDATE bot_settings SET value = $1 WHERE key = $2', [
+      new Date().toISOString(),
+      'last_analysis',
+    ]);
   } catch (dbErr) {
     console.error('Failed to log analysis:', dbErr.message);
   }
@@ -296,8 +327,8 @@ async function runFullAnalysis(marketData) {
       trend: indicators4h.trend,
       rsi: indicators4h.rsi,
       fearGreed: marketData.fearGreed,
-      analysisTime
-    }
+      analysisTime,
+    },
   };
 }
 
@@ -318,10 +349,10 @@ Respond with ONLY a one sentence lesson starting with "When RSI..." or "In ${mar
     const response = await client.messages.create({
       model: CHEAP_MODEL,
       max_tokens: 100,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
     });
     return response.content[0].text.trim();
-  } catch (err) {
+  } catch (_err) {
     return null;
   }
 }

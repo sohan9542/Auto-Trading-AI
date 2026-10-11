@@ -1,0 +1,5 @@
+node_modules/
+backtest_results/
+package-lock.json
+coverage/
+*.log

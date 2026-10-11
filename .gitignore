@@ -1,4 +1,9 @@
 .env
 node_modules/
 backtest_results/
+coverage/
 *.log
+.DS_Store
+.idea/
+.vscode/
+*.pem

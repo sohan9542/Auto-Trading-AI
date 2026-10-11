@@ -5,10 +5,10 @@ const { Pool } = require('pg');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 5,                        // Neon free tier friendly
-  idleTimeoutMillis: 30000,      // drop idle clients BEFORE Neon kills them
+  max: 5, // Neon free tier friendly
+  idleTimeoutMillis: 30000, // drop idle clients BEFORE Neon kills them
   connectionTimeoutMillis: 10000,
-  keepAlive: true
+  keepAlive: true,
 });
 
 // CRITICAL: Neon closes idle connections — without this handler,
@@ -148,7 +148,7 @@ async function query(text, params) {
         err.message.includes('connection');
       if (isTransient && attempt < 3) {
         console.warn(`⚠️ DB transient error (attempt ${attempt}/3), retrying in ${attempt}s...`);
-        await new Promise(r => setTimeout(r, 1000 * attempt));
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
         continue;
       }
       console.error('DB Query Error:', err.message);
@@ -171,10 +171,11 @@ async function setSetting(key, value) {
 
 async function logError(type, message, context = '') {
   try {
-    await query(
-      'INSERT INTO error_log (error_type, error_message, context) VALUES ($1, $2, $3)',
-      [type, message, context]
-    );
+    await query('INSERT INTO error_log (error_type, error_message, context) VALUES ($1, $2, $3)', [
+      type,
+      message,
+      context,
+    ]);
   } catch (err) {
     console.error('Failed to log error:', err.message);
   }

@@ -1,9 +1,7 @@
 // src/marketData.js - Fetch live market data & calculate indicators
 
 const axios = require('axios');
-const {
-  RSI, MACD, BollingerBands, EMA, SMA, ATR, Stochastic
-} = require('technicalindicators');
+const { RSI, MACD, BollingerBands, EMA, ATR, Stochastic } = require('technicalindicators');
 
 // Public market data endpoint — works from any region (Railway US servers included)
 const BINANCE_BASE = 'https://data-api.binance.vision/api/v3';
@@ -13,17 +11,17 @@ async function getCandles(pair, interval, limit = 100) {
   try {
     const response = await axios.get(`${BINANCE_BASE}/klines`, {
       params: { symbol: pair, interval, limit },
-      timeout: 10000
+      timeout: 10000,
     });
 
-    return response.data.map(c => ({
+    return response.data.map((c) => ({
       time: c[0],
       open: parseFloat(c[1]),
       high: parseFloat(c[2]),
       low: parseFloat(c[3]),
       close: parseFloat(c[4]),
       volume: parseFloat(c[5]),
-      closeTime: c[6]
+      closeTime: c[6],
     }));
   } catch (err) {
     console.error(`Failed to fetch candles for ${pair}:`, err.message);
@@ -35,7 +33,7 @@ async function getCandles(pair, interval, limit = 100) {
 async function getCurrentPrice(pair) {
   const response = await axios.get(`${BINANCE_BASE}/ticker/price`, {
     params: { symbol: pair },
-    timeout: 5000
+    timeout: 5000,
   });
   return parseFloat(response.data.price);
 }
@@ -44,7 +42,7 @@ async function getCurrentPrice(pair) {
 async function get24hStats(pair) {
   const response = await axios.get(`${BINANCE_BASE}/ticker/24hr`, {
     params: { symbol: pair },
-    timeout: 5000
+    timeout: 5000,
   });
   return {
     priceChange: parseFloat(response.data.priceChange),
@@ -52,16 +50,16 @@ async function get24hStats(pair) {
     high24h: parseFloat(response.data.highPrice),
     low24h: parseFloat(response.data.lowPrice),
     volume24h: parseFloat(response.data.volume),
-    quoteVolume24h: parseFloat(response.data.quoteVolume)
+    quoteVolume24h: parseFloat(response.data.quoteVolume),
   };
 }
 
 // Calculate all technical indicators
 function calculateIndicators(candles) {
-  const closes = candles.map(c => c.close);
-  const highs = candles.map(c => c.high);
-  const lows = candles.map(c => c.low);
-  const volumes = candles.map(c => c.volume);
+  const closes = candles.map((c) => c.close);
+  const highs = candles.map((c) => c.high);
+  const lows = candles.map((c) => c.low);
+  const volumes = candles.map((c) => c.volume);
 
   // RSI (14)
   const rsiValues = RSI.calculate({ values: closes, period: 14 });
@@ -70,15 +68,21 @@ function calculateIndicators(candles) {
 
   // MACD (12, 26, 9)
   const macdValues = MACD.calculate({
-    values: closes, fastPeriod: 12, slowPeriod: 26,
-    signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false
+    values: closes,
+    fastPeriod: 12,
+    slowPeriod: 26,
+    signalPeriod: 9,
+    SimpleMAOscillator: false,
+    SimpleMASignal: false,
   });
   const macd = macdValues[macdValues.length - 1];
   const macdPrev = macdValues[macdValues.length - 2];
 
   // Bollinger Bands (20, 2)
   const bbValues = BollingerBands.calculate({
-    values: closes, period: 20, stdDev: 2
+    values: closes,
+    period: 20,
+    stdDev: 2,
   });
   const bb = bbValues[bbValues.length - 1];
 
@@ -96,8 +100,11 @@ function calculateIndicators(candles) {
 
   // Stochastic (14, 3, 3)
   const stochValues = Stochastic.calculate({
-    high: highs, low: lows, close: closes,
-    period: 14, signalPeriod: 3
+    high: highs,
+    low: lows,
+    close: closes,
+    period: 14,
+    signalPeriod: 3,
   });
   const stoch = stochValues[stochValues.length - 1];
 
@@ -116,8 +123,14 @@ function calculateIndicators(candles) {
 
   // Support/Resistance levels (simple swing high/low)
   const recentCandles = candles.slice(-20);
-  const swingHighs = recentCandles.map(c => c.high).sort((a, b) => b - a).slice(0, 3);
-  const swingLows = recentCandles.map(c => c.low).sort((a, b) => a - b).slice(0, 3);
+  const swingHighs = recentCandles
+    .map((c) => c.high)
+    .sort((a, b) => b - a)
+    .slice(0, 3);
+  const swingLows = recentCandles
+    .map((c) => c.low)
+    .sort((a, b) => a - b)
+    .slice(0, 3);
 
   // MACD signal
   let macdSignal = 'NEUTRAL';
@@ -140,35 +153,44 @@ function calculateIndicators(candles) {
     rsi: parseFloat(rsi?.toFixed(2)),
     rsiPrev: parseFloat(rsiPrev?.toFixed(2)),
     rsiCondition,
-    macd: macd ? {
-      macd: parseFloat(macd.MACD?.toFixed(4)),
-      signal: parseFloat(macd.signal?.toFixed(4)),
-      histogram: parseFloat(macd.histogram?.toFixed(4))
-    } : null,
+    macd: macd
+      ? {
+          macd: parseFloat(macd.MACD?.toFixed(4)),
+          signal: parseFloat(macd.signal?.toFixed(4)),
+          histogram: parseFloat(macd.histogram?.toFixed(4)),
+        }
+      : null,
     macdSignal,
-    bb: bb ? {
-      upper: parseFloat(bb.upper?.toFixed(2)),
-      middle: parseFloat(bb.middle?.toFixed(2)),
-      lower: parseFloat(bb.lower?.toFixed(2)),
-      bandwidth: parseFloat(((bb.upper - bb.lower) / bb.middle * 100)?.toFixed(2))
-    } : null,
+    bb: bb
+      ? {
+          upper: parseFloat(bb.upper?.toFixed(2)),
+          middle: parseFloat(bb.middle?.toFixed(2)),
+          lower: parseFloat(bb.lower?.toFixed(2)),
+          bandwidth: parseFloat((((bb.upper - bb.lower) / bb.middle) * 100)?.toFixed(2)),
+        }
+      : null,
     ema20: parseFloat(ema20?.toFixed(2)),
     ema50: parseFloat(ema50?.toFixed(2)),
     ema200: parseFloat(ema200?.toFixed(2)),
     atr: parseFloat(atr?.toFixed(2)),
-    stoch: stoch ? {
-      k: parseFloat(stoch.k?.toFixed(2)),
-      d: parseFloat(stoch.d?.toFixed(2))
-    } : null,
+    stoch: stoch
+      ? {
+          k: parseFloat(stoch.k?.toFixed(2)),
+          d: parseFloat(stoch.d?.toFixed(2)),
+        }
+      : null,
     volumeRatio: parseFloat(volumeRatio?.toFixed(2)),
     trend,
     swingHighs,
     swingLows,
-    lastCandles: candles.slice(-5).map(c => ({
+    lastCandles: candles.slice(-5).map((c) => ({
       time: new Date(c.time).toISOString(),
-      open: c.open, high: c.high, low: c.low,
-      close: c.close, volume: parseFloat(c.volume.toFixed(2))
-    }))
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: parseFloat(c.volume.toFixed(2)),
+    })),
   };
 }
 
@@ -176,14 +198,14 @@ function calculateIndicators(candles) {
 async function getFearAndGreed() {
   try {
     const response = await axios.get('https://api.alternative.me/fng/?limit=2', {
-      timeout: 8000
+      timeout: 8000,
     });
     const data = response.data.data;
     return {
       value: parseInt(data[0].value),
       label: data[0].value_classification,
       yesterday: parseInt(data[1].value),
-      trend: parseInt(data[0].value) > parseInt(data[1].value) ? 'IMPROVING' : 'DECLINING'
+      trend: parseInt(data[0].value) > parseInt(data[1].value) ? 'IMPROVING' : 'DECLINING',
     };
   } catch (err) {
     console.error('Fear & Greed fetch failed:', err.message);
@@ -197,22 +219,21 @@ async function getCryptoNews(pair) {
     const coin = pair.replace('USDT', '').toUpperCase();
     const response = await axios.get('https://min-api.cryptocompare.com/data/v2/news/', {
       params: { lang: 'EN', categories: coin },
-      timeout: 10000
+      timeout: 10000,
     });
 
     if (!response.data?.Data) return [];
 
     // Only news from last 12 hours, most recent first
     const twelveHoursAgo = Date.now() / 1000 - 12 * 3600;
-    return response.data.Data
-      .filter(post => post.published_on > twelveHoursAgo)
+    return response.data.Data.filter((post) => post.published_on > twelveHoursAgo)
       .slice(0, 15)
-      .map(post => ({
+      .map((post) => ({
         title: post.title,
         source: post.source_info?.name || post.source || 'Unknown',
         publishedAt: new Date(post.published_on * 1000).toISOString(),
         sentiment: 'NEUTRAL', // Claude judges sentiment from the headline itself
-        url: post.url
+        url: post.url,
       }));
   } catch (err) {
     console.error('News fetch failed:', err.message);
@@ -224,16 +245,13 @@ async function getCryptoNews(pair) {
 async function collectMarketData(pair) {
   console.log(`📊 Collecting market data for ${pair}...`);
 
-  const [
-    candles4h, candles1h, candles1d,
-    stats24h, fearGreed, news
-  ] = await Promise.all([
+  const [candles4h, candles1h, candles1d, stats24h, fearGreed, news] = await Promise.all([
     getCandles(pair, '4h', 100),
     getCandles(pair, '1h', 50),
     getCandles(pair, '1d', 30),
     get24hStats(pair),
     getFearAndGreed(),
-    getCryptoNews(pair)
+    getCryptoNews(pair),
   ]);
 
   const indicators4h = calculateIndicators(candles4h);
@@ -253,15 +271,25 @@ async function collectMarketData(pair) {
     marketContext: {
       isHighVolume: indicators4h.volumeRatio > 1.5,
       isTrending: !['SIDEWAYS'].includes(indicators4h.trend),
-      fearGreedLevel: fearGreed.value < 25 ? 'EXTREME_FEAR' :
-                      fearGreed.value < 45 ? 'FEAR' :
-                      fearGreed.value < 55 ? 'NEUTRAL' :
-                      fearGreed.value < 75 ? 'GREED' : 'EXTREME_GREED'
-    }
+      fearGreedLevel:
+        fearGreed.value < 25
+          ? 'EXTREME_FEAR'
+          : fearGreed.value < 45
+            ? 'FEAR'
+            : fearGreed.value < 55
+              ? 'NEUTRAL'
+              : fearGreed.value < 75
+                ? 'GREED'
+                : 'EXTREME_GREED',
+    },
   };
 }
 
 module.exports = {
-  collectMarketData, getCandles, getCurrentPrice,
-  get24hStats, getFearAndGreed, getCryptoNews
+  collectMarketData,
+  getCandles,
+  getCurrentPrice,
+  get24hStats,
+  getFearAndGreed,
+  getCryptoNews,
 };
